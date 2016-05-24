@@ -1,0 +1,86 @@
+<?php
+/**
+ * Implements hook_form_alter().
+ * Remove batch process defined by pathauto for nodes ad define our own
+ *
+ * @param array $form
+ * @param array $form_state
+ * @param string $form_id
+ */
+function mekit_nh_pathauto_form_alter(&$form, &$form_state, $form_id) {
+  if($form_id == 'pathauto_bulk_update_form') {
+    $originalName = "node_pathauto_bulk_update_batch_process";
+    $customName = "mekit_" . $originalName;
+
+    if(isset($form["#update_callbacks"][$originalName])) {
+
+      /** @var \stdClass $nodeBatch */
+      $nodeBatch = $form["#update_callbacks"][$originalName];
+      unset($form["#update_callbacks"][$originalName]);
+
+      //
+      $nodeBatch->batch_update_callback = $customName;
+      $nodeBatch->batch_file = drupal_get_path('module', 'mekit_nh_pathauto') . '/pathauto.batch.inc.php';
+      $form["#update_callbacks"][$customName] = $nodeBatch;
+
+      //options
+      unset($form["update"]["#options"][$originalName]);
+      $form["update"]["#options"][$customName] = "Node Aliases (mekit_nh_pathauto) - Regenerate All";
+      ksort($form["update"]["#options"]);
+
+    }
+  }
+}
+
+/**
+ * implements hook_pathauto_alias_alter
+ *
+ * @param string  $alias
+ * @param array   $context
+ */
+function mekit_nh_pathauto_pathauto_alias_alter(&$alias, array &$context) {
+  if ($context["op"] != "return" && $context["module"] == "node") {
+    /** @var \stdClass $currentNode */
+    $currentNode = $context["data"]["node"];
+    if (preg_match('/nodehierarchy:parent/', $context["pattern"])) {
+      $parent_node = nodehierarchy_get_node_parent($currentNode->nid);
+      if ($parent_node) {
+        if (!_is_path_aliased('node/' . $parent_node->nid, $context["language"])) {
+          pathauto_node_update_alias($parent_node, $context["op"], ['language' => $context["language"]]);
+        }
+      }
+      //recalculate alias for current node now that all its anchestors have aliases
+      $alias = pathauto_node_update_alias($currentNode, 'return', ['language' => $context["language"]]);
+    }
+  }
+}
+
+
+/**
+ * Check is a 'node/xxx' path is aliased and remember it
+ * @param $path
+ * @param $language
+ * @return bool
+ */
+function _is_path_aliased($path, $language) {
+  static $mekit_path_aliases;
+  if (!isset($mekit_path_aliases)) {
+    $mekit_path_aliases = [];
+  }
+  if(isset($mekit_path_aliases[$path][$language])) {
+    return true;
+  }
+
+  $args = [
+    ':source' => $path,
+    ':language' => $language,
+  ];
+  $result = db_query("SELECT COUNT(*) AS CNT FROM {url_alias} WHERE source = :source AND language = :language", $args);
+  $count = $result->fetchField();
+  if($count) {
+    $mekit_path_aliases[$path][$language] = true;
+    return true;
+  }
+
+  return false;
+}

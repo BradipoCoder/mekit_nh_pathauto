@@ -1,0 +1,7 @@
+name = Mekit - Url alias(pathauto) mods for nodehierarchy
+description = Fix url alias generation issues when using nodehierarchy and pathauto
+package = Mekit
+core = 7.x
+dependencies[] = nodehierarchy
+dependencies[] = pathauto
+
